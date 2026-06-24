@@ -1,0 +1,102 @@
+# DNA序列分类自监督表示学习项目配置
+
+# 项目信息
+project:
+  name: "dna-ssl-project"
+  version: "1.0.0"
+  description: "DNA序列分类自监督表示学习"
+
+# 数据配置
+data:
+  # 数据目录
+  data_dir: "data"
+  # 序列长度范围
+  min_seq_length: 500
+  max_seq_length: 1000
+  # 物种列表
+  species:
+    - "human"
+    - "mouse"
+    - "fly"
+    - "worm"
+  # 训练/验证/测试比例
+  train_ratio: 0.7
+  val_ratio: 0.15
+  test_ratio: 0.15
+
+# k-mer编码配置
+kmer:
+  k: 3
+  vocab_size: 64
+  special_tokens:
+    cls: "[CLS]"
+    sep: "[SEP]"
+    pad: "[PAD]"
+    mask: "[MASK]"
+  max_seq_length: 512
+
+# 模型配置
+model:
+  # CNN编码器
+  encoder:
+    embedding_dim: 128
+    num_filters: [256, 512, 256]
+    kernel_sizes: [3, 5, 7]
+    dropout: 0.1
+  # 掩码重构模型
+  masked_reconstruction:
+    mask_ratio: 0.15
+    reconstruction_hidden_dim: 512
+  # 分类头
+  classifier:
+    hidden_dim: 256
+    num_classes: 4
+    dropout: 0.2
+
+# 训练配置
+training:
+  # 预训练
+  pretrain:
+    epochs: 100
+    batch_size: 32
+    learning_rate: 0.001
+    weight_decay: 0.01
+    warmup_steps: 1000
+  # 微调
+  finetune:
+    epochs: 50
+    batch_size: 64
+    learning_rate: 0.0001
+    weight_decay: 0.001
+  # 优化器
+  optimizer: "adamw"
+  scheduler: "cosine"
+  # 早停
+  early_stopping:
+    patience: 10
+    min_delta: 0.001
+
+# 可视化配置
+visualization:
+  tsne:
+    n_components: 2
+    perplexity: 30
+    random_state: 42
+  pca:
+    n_components: 50
+  plots:
+    figsize: [10, 8]
+    dpi: 300
+    format: "png"
+
+# 实验配置
+experiment:
+  output_dir: "experiments"
+  save_best_model: true
+  log_interval: 100
+  random_seed: 42
+
+# 设备配置
+device:
+  use_cuda: true
+  gpu_id: 0
