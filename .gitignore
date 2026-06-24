@@ -35,6 +35,14 @@ ENV/
 .DS_Store
 Thumbs.db
 
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Pytest cache
+.pytest_cache/
+
 # Project specific
-data/*.fasta
 *.log
+
+# Results (large files, regenerate by running experiment)
+# results/experiment_*/

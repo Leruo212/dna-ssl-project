@@ -1,0 +1,78 @@
+{
+  "pretraining": {
+    "train_losses": [
+      4.060920675079544,
+      3.3681044083137017,
+      2.2384401466939354,
+      1.3646761550531759,
+      0.936676470490245,
+      0.7584444601814468,
+      0.6770902531487601,
+      0.6435387699634998,
+      0.618387374010953,
+      0.6102940904629695
+    ],
+    "val_losses": [
+      3.8066837787628174,
+      2.773519217967987,
+      1.622813481092453,
+      0.9877786725759506,
+      0.7496543288230896,
+      0.6268764168024064,
+      0.5817324757575989,
+      0.5720317393541337,
+      0.5606235414743423,
+      0.5338884592056274
+    ],
+    "model_path": "/Users/marhozen/Desktop/claude/dna-ssl-project/results/experiment_20260624_151338/pretraining/final_model.pt",
+    "num_epochs": 10,
+    "batch_size": 32,
+    "learning_rate": 0.0001
+  },
+  "classification": {
+    "metrics": {
+      "accuracy": 0.23567921440261866,
+      "precision": 0.058919803600654665,
+      "recall": 0.25,
+      "f1": 0.09536423841059602
+    },
+    "train_history": [
+      1.3873865898553428,
+      1.3850135431661235,
+      1.384775321204941,
+      1.384287210253926,
+      1.3838741918662927
+    ],
+    "num_epochs": 5
+  },
+  "visualization": {
+    "tsne_plot_path": "/Users/marhozen/Desktop/claude/dna-ssl-project/results/experiment_20260624_151338/visualizations/dna_features_tsne.png",
+    "pca_plot_path": "/Users/marhozen/Desktop/claude/dna-ssl-project/results/experiment_20260624_151338/visualizations/dna_features_pca.png",
+    "clustering_metrics": {
+      "silhouette_score": 0.0147927887737751,
+      "calinski_harabasz_score": 139.5438587405101,
+      "davies_bouldin_score": 12.740043395713219
+    },
+    "pca_explained_variance": [
+      0.11256439983844757,
+      0.053736623376607895
+    ]
+  },
+  "summary": {
+    "best_train_loss": 0.6102940904629695,
+    "best_val_loss": 0.5338884592056274,
+    "classification_accuracy": 0.23567921440261866,
+    "classification_f1": 0.09536423841059602,
+    "silhouette_score": 0.0147927887737751
+  },
+  "config": {
+    "num_epochs": 10,
+    "batch_size": 32,
+    "learning_rate": 0.0001,
+    "device": "cpu",
+    "max_length": 512,
+    "k": 3,
+    "mask_ratio": 0.15
+  },
+  "timestamp": "2026-06-24T15:36:58.135146"
+}

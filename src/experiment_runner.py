@@ -492,7 +492,7 @@ def main():
     # 设置路径
     project_root = Path(__file__).parent.parent
     data_dir = str(project_root / "data")
-    results_dir = str(project_root / "results" / "experiment_" + datetime.now().strftime("%Y%m%d_%H%M%S"))
+    results_dir = str(project_root / "results" / f"experiment_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
 
     # 创建运行器
     runner = ExperimentRunner(
