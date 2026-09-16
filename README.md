@@ -25,6 +25,12 @@
 > 早期版本的下游分类只有 **0.2357** —— **低于随机基线**。
 > 根因与修复过程见 [复盘](#复盘分类头为什么停在随机水平)，那里的数字均为实测。
 
+<p align="center">
+  <img src="docs/figures/fig2_pretraining_loss.png" alt="掩码重构预训练损失" width="47%">
+  <img src="docs/figures/fig3_classification_metrics.png" alt="四物种分类指标" width="47%">
+</p>
+<p align="center"><sub>左：预训练损失，train 4.06 → 0.61｜右：下游四物种分类，accuracy 0.682</sub></p>
+
 ---
 
 ## 方法
