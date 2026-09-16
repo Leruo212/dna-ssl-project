@@ -85,6 +85,9 @@ python src/experiment_runner.py
 
 # 已有预训练 checkpoint 时，只重跑下游分类（省掉预训练）
 python scripts/rerun_classification.py
+
+# 测试
+pytest tests/          # 124 passed
 ```
 
 ## 结果文件
