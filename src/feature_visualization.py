@@ -10,6 +10,7 @@
 用于评估自监督学习学到的表示是否具有区分性。
 """
 import os
+import inspect
 import numpy as np
 import torch
 from typing import Dict, List, Optional, Tuple
@@ -76,14 +77,25 @@ class FeatureVisualizer:
         """
         logger.info(f"开始t-SNE降维: {features.shape} -> {n_components}D")
 
-        self.tsne_model = TSNE(
-            n_components=n_components,
-            perplexity=perplexity,
-            learning_rate=learning_rate,
-            n_iter=n_iter,
-            random_state=self.random_state,
-            init='pca'
+        # 兼容不同版本的 scikit-learn：
+        #  - >= 1.5 将 TSNE 的 n_iter 更名为 max_iter
+        #  - >= 1.5 的 learning_rate 只接受 'auto' / 'warn'，不再接受浮点数
+        tsne_params = inspect.signature(TSNE).parameters
+
+        tsne_kwargs = {
+            'n_components': n_components,
+            'perplexity': perplexity,
+            'random_state': self.random_state,
+            'init': 'pca',
+        }
+        tsne_kwargs['max_iter' if 'max_iter' in tsne_params else 'n_iter'] = n_iter
+
+        lr_default = tsne_params['learning_rate'].default
+        tsne_kwargs['learning_rate'] = (
+            learning_rate if isinstance(lr_default, (int, float)) else 'auto'
         )
+
+        self.tsne_model = TSNE(**tsne_kwargs)
 
         tsne_result = self.tsne_model.fit_transform(features)
 

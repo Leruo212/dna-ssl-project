@@ -1,5 +1,8 @@
 """创建 Jupyter Notebook 用于可视化展示"""
 import nbformat as nbf
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 nb = nbf.v4.new_notebook()
 nb.metadata = {
@@ -463,7 +466,7 @@ cells.append(nbf.v4.new_markdown_cell("""## 9. 结论
 
 nb.cells = cells
 
-with open('/Users/marhozen/Desktop/claude/dna-ssl-project/notebooks/visualization.ipynb', 'w') as f:
+with open(str(PROJECT_ROOT / "notebooks/visualization.ipynb"), 'w') as f:
     nbf.write(nb, f)
 
 print("Notebook 创建完成！")

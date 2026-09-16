@@ -58,6 +58,8 @@ class ExperimentRunner:
         num_epochs: int = 10,
         batch_size: int = 32,
         learning_rate: float = 1e-4,
+        classification_epochs: int = 50,
+        classification_lr: float = 1e-3,
         device: str = 'cpu',
         max_length: int = 512,
         k: int = 3,
@@ -68,6 +70,8 @@ class ExperimentRunner:
         self.num_epochs = num_epochs
         self.batch_size = batch_size
         self.learning_rate = learning_rate
+        self.classification_epochs = classification_epochs
+        self.classification_lr = classification_lr
         self.device = device
         self.max_length = max_length
         self.k = k
@@ -203,6 +207,39 @@ class ExperimentRunner:
         logger.info("预训练实验完成")
         return self.pretraining_results
 
+    @torch.no_grad()
+    def _precompute_features(self, dataset):
+        """用冻结的编码器一次性提取并缓存整个数据集的特征
+
+        编码器参数已冻结，其特征与分类头无关，没必要每轮重算。
+        实测在 CPU 上重跑一遍 CNN 约 50ms/样本，若每轮都重算，
+        50 轮需要约 100 分钟。
+
+        Args:
+            dataset: 返回 (sequence, label) 或 (original, masked, label) 的数据集
+
+        Returns:
+            (features, labels) 张量元组
+        """
+        encoder = self.model.get_encoder()
+        encoder.eval()
+        encoder.to(self.device)
+
+        loader = torch.utils.data.DataLoader(
+            dataset, batch_size=self.batch_size, shuffle=False
+        )
+
+        feats, labels = [], []
+        for batch in loader:
+            if len(batch) == 2:
+                sequences, y = batch
+            else:
+                sequences, _, y = batch
+            feats.append(encoder(sequences.to(self.device)).cpu())
+            labels.append(y)
+
+        return torch.cat(feats), torch.cat(labels)
+
     def run_classification(self) -> Dict[str, Any]:
         """运行分类实验
 
@@ -228,47 +265,55 @@ class ExperimentRunner:
             dropout=0.2
         )
 
-        # 准备数据加载器
+        # 预提取冻结特征，并在特征上构建数据加载器
+        logger.info("提取并缓存编码器特征（只需一次）...")
+        train_feats, train_labels = self._precompute_features(train_dataset)
+        val_feats, val_labels = self._precompute_features(val_dataset)
+        logger.info(f"特征缓存完成: train={tuple(train_feats.shape)} val={tuple(val_feats.shape)}")
+
         train_loader = torch.utils.data.DataLoader(
-            train_dataset,
+            torch.utils.data.TensorDataset(train_feats, train_labels),
             batch_size=self.batch_size,
             shuffle=True
         )
 
         val_loader = torch.utils.data.DataLoader(
-            val_dataset,
+            torch.utils.data.TensorDataset(val_feats, val_labels),
             batch_size=self.batch_size,
             shuffle=False
         )
 
-        # 训练分类头
-        optimizer = torch.optim.Adam(
-            self.classification_model.classifier.parameters(),
-            lr=self.learning_rate
-        )
+        # 训练分类头：只优化 requires_grad=True 的参数（feature_norm + classifier）。
+        # 编码器参数已冻结，不纳入优化器。
+        # 学习率不能沿用预训练的 1e-4 —— 冻结特征 L2 量级仅约 0.46，
+        # 在 1e-4 下梯度小到几乎不更新（实测 5 轮后 loss 反而上升）。
+        trainable_params = [
+            p for p in self.classification_model.parameters() if p.requires_grad
+        ]
+        optimizer = torch.optim.Adam(trainable_params, lr=self.classification_lr)
         criterion = torch.nn.CrossEntropyLoss()
 
         train_losses = []
+        val_losses = []
+        val_accuracies = []
         self.classification_model.to(self.device)
 
         # 训练循环
-        num_classification_epochs = 5
+        num_classification_epochs = self.classification_epochs
+        best_val_acc = 0.0
+        best_state = None
+
         for epoch in range(num_classification_epochs):
             self.classification_model.train()
             total_loss = 0
             num_batches = 0
 
-            for batch in train_loader:
-                if len(batch) == 2:
-                    sequences, labels = batch
-                else:
-                    sequences, _, labels = batch
-
-                sequences = sequences.to(self.device)
+            for features, labels in train_loader:
+                features = features.to(self.device)
                 labels = labels.to(self.device)
 
                 optimizer.zero_grad()
-                outputs = self.classification_model(sequences)
+                outputs = self.classification_model.forward_from_features(features)
                 loss = criterion(outputs, labels)
                 loss.backward()
                 optimizer.step()
@@ -278,7 +323,44 @@ class ExperimentRunner:
 
             avg_loss = total_loss / num_batches
             train_losses.append(avg_loss)
-            logger.info(f"分类训练 Epoch {epoch + 1}/{num_classification_epochs}, Loss: {avg_loss:.4f}")
+
+            # 每轮在验证集上评估，用于确认模型是否真的在收敛
+            self.classification_model.eval()
+            val_loss_total = 0
+            val_batches = 0
+            correct = 0
+            total = 0
+            with torch.no_grad():
+                for features, labels in val_loader:
+                    features = features.to(self.device)
+                    labels = labels.to(self.device)
+                    outputs = self.classification_model.forward_from_features(features)
+
+                    val_loss_total += criterion(outputs, labels).item()
+                    val_batches += 1
+                    correct += (outputs.argmax(1) == labels).sum().item()
+                    total += labels.size(0)
+
+            val_loss = val_loss_total / max(val_batches, 1)
+            val_acc = correct / max(total, 1)
+            val_losses.append(val_loss)
+            val_accuracies.append(val_acc)
+
+            if val_acc >= best_val_acc:
+                best_val_acc = val_acc
+                best_state = {
+                    k: v.detach().clone()
+                    for k, v in self.classification_model.state_dict().items()
+                }
+
+            logger.info(
+                f"分类训练 Epoch {epoch + 1}/{num_classification_epochs} "
+                f"train_loss={avg_loss:.4f} val_loss={val_loss:.4f} val_acc={val_acc:.4f}"
+            )
+
+        # 回滚到验证集上表现最好的权重
+        if best_state is not None:
+            self.classification_model.load_state_dict(best_state)
 
         # 评估
         self.classification_model.eval()
@@ -286,14 +368,9 @@ class ExperimentRunner:
         all_labels = []
 
         with torch.no_grad():
-            for batch in val_loader:
-                if len(batch) == 2:
-                    sequences, labels = batch
-                else:
-                    sequences, _, labels = batch
-
-                sequences = sequences.to(self.device)
-                outputs = self.classification_model(sequences)
+            for features, labels in val_loader:
+                features = features.to(self.device)
+                outputs = self.classification_model.forward_from_features(features)
                 predictions = torch.argmax(outputs, dim=1)
 
                 all_predictions.extend(predictions.cpu().numpy())
@@ -308,7 +385,11 @@ class ExperimentRunner:
         self.classification_results = {
             'metrics': metrics,
             'train_history': train_losses,
-            'num_epochs': num_classification_epochs
+            'val_loss_history': val_losses,
+            'val_accuracy_history': val_accuracies,
+            'best_val_accuracy': best_val_acc,
+            'num_epochs': num_classification_epochs,
+            'learning_rate': self.classification_lr
         }
 
         logger.info(f"分类实验完成，准确率: {metrics['accuracy']:.4f}")
@@ -501,6 +582,8 @@ def main():
         num_epochs=10,
         batch_size=32,
         learning_rate=1e-4,
+        classification_epochs=50,
+        classification_lr=1e-3,
         device='cpu',
         max_length=512,
         k=3,

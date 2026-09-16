@@ -1,224 +1,198 @@
-# DNA序列分类的自监督表示学习
+# DNA 序列分类的自监督表示学习
 
-## 项目简介
+用**掩码重构**（masked reconstruction）在未标注的基因组片段上预训练 CNN 编码器，
+再把学到的表征迁移到四物种分类任务（human / mouse / fly / worm）。
 
-本项目实现了基于掩码重构学习（Masked Reconstruction Learning）的DNA序列分类自监督表示学习方法。针对生物信息学领域中标签稀缺、标注成本高的问题，利用大量未标注DNA序列数据进行自监督预训练，学习有效的DNA序列表示，然后用于下游分类任务。
+针对生物信息学的典型困境：标注昂贵、标签稀缺。思路是先用大量无标注序列学表征，
+再只用少量标注做下游任务。
 
-## 项目特点
+`PyTorch` · `124 个单元测试` · `完整训练日志` · `PCA / t-SNE 可视化`
 
-- **自监督学习**：无需大量标注数据，利用未标注DNA序列进行预训练
-- **掩码重构**：通过掩码和重构任务学习DNA序列的局部模式
-- **CNN架构**：使用卷积神经网络作为编码器，捕获序列特征
-- **多物种分类**：支持人类、小鼠、果蝇、线虫四个物种的分类
-- **完整流程**：包含数据预处理、模型训练、特征可视化、结果分析
+---
+
+## 结果
+
+| 阶段 | 指标 | 数值 |
+|---|---|---|
+| 预训练（10 epoch） | train loss | 4.0609 → 0.6103 |
+|  | val loss | 3.8067 → 0.5339 |
+| 下游分类（50 epoch） | **验证集 accuracy** | **0.6825** |
+|  | precision / recall / f1 | 0.6822 / 0.6871 / 0.6830 |
+|  | 随机基线（4 分类） | 0.2500 |
+
+验证准确率随训练稳定上升：`0.319`（第 1 轮）→ `0.597`（第 25 轮）→ `0.683`（第 48 轮）。
+
+> 早期版本的下游分类只有 **0.2357** —— **低于随机基线**。
+> 根因与修复过程见 [复盘](#复盘分类头为什么停在随机水平)，那里的数字均为实测。
+
+---
+
+## 方法
+
+**预训练：掩码重构。**
+随机遮住 15% 的 k-mer token（k=3，词表 4³=64），让模型重建被遮住的位置。
+编码器为 3 层一维卷积 + BatchNorm + 全局平均池化，输出 256 维表征。
+
+**下游：线性探测。**
+冻结整个编码器，只训练一个 2 层 MLP 分类头。
+
+```
+DNA 序列 ──► 3-mer 分词 ──► 随机掩码 ──► CNN 编码器 ──► 256 维表征
+                                              │
+                                        冻结，只取特征
+                                              ▼
+                                       特征标准化 ──► MLP 分类头 ──► 4 类
+```
 
 ## 项目结构
 
 ```
 dna-ssl-project/
-├── config/              # 配置文件
-│   └── default.yaml
-├── data/                # 数据集
-│   ├── human.fasta
-│   ├── mouse.fasta
-│   ├── fly.fasta
-│   └── worm.fasta
-├── docs/                # 文档
-│   ├── plans/           # 设计文档
-│   ├── report.md        # 实验报告（Markdown）
-│   └── DNA序列表征学习报告.docx  # 学术报告（Word格式）
-├── notebooks/           # Jupyter Notebook
-│   └── visualization.ipynb  # 交互式可视化展示
-├── src/                 # 源代码
-│   ├── kmer_encoding.py          # k-mer编码
-│   ├── dataset.py                # 数据集类
-│   ├── cnn_encoder.py            # CNN编码器
-│   ├── masked_reconstruction_model.py  # 掩码重构模型
-│   ├── pretrainer.py             # 预训练器
-│   ├── classification_model.py  # 分类模型
-│   ├── feature_visualization.py # 特征可视化
-│   └── experiment_runner.py      # 实验运行器
-├── tests/               # 测试代码（124个测试用例）
-├── results/             # 实验结果
-├── requirements.txt     # 依赖包
-└── README.md            # 项目说明
+├── config/default.yaml                 # 数据 / 模型 / 训练配置
+├── data/                               # human mouse fly worm，各约 750 条 750bp 片段
+├── docs/
+│   ├── plans/                          # 设计与实现方案
+│   ├── figures/                        # 报告用图（损失曲线、t-SNE、PCA 等）
+│   └── report.md                       # 实验报告
+├── notebooks/
+│   ├── visualization.ipynb             # 交互式可视化展示
+│   ├── create_notebook.py              # 生成上面的 notebook
+│   └── create_word_report.py           # 生成 Word 版报告（可选）
+├── results/                            # 训练日志、checkpoint、可视化
+├── scripts/
+│   └── rerun_classification.py         # 跳过预训练，只重跑下游分类
+├── src/
+│   ├── kmer_encoding.py                # 3-mer 分词与编码
+│   ├── data_preprocessing.py           # 序列切分与清洗
+│   ├── dataset.py                      # Dataset（掩码 / 非掩码两种模式）
+│   ├── cnn_encoder.py                  # CNN 编码器
+│   ├── masked_reconstruction_model.py  # 掩码重构预训练模型
+│   ├── pretrainer.py                   # 预训练循环
+│   ├── classification_model.py         # 冻结编码器 + 分类头
+│   ├── feature_visualization.py        # t-SNE / PCA / 聚类指标
+│   └── experiment_runner.py            # 端到端实验编排
+├── tests/                              # 124 个测试用例
+└── requirements.txt
 ```
 
-## 交付物说明
+## 快速开始
 
-### 1. Jupyter Notebook（可视化展示）
-文件位置：`notebooks/visualization.ipynb`
-
-包含交互式的实验可视化展示，可直接在浏览器中打开运行：
-- 数据探索与统计
-- k-mer编码演示
-- 模型架构展示
-- 预训练损失曲线
-- 分类指标可视化
-- t-SNE和PCA特征可视化
-- 聚类质量分析
-
-**启动方式**：
-```bash
-cd notebooks
-jupyter notebook visualization.ipynb
-```
-
-### 2. Word学术报告
-文件位置：`docs/DNA序列表征学习报告.docx`
-
-完整的学术报告文档，包含：
-- 摘要与关键词
-- 引言（研究背景、研究意义）
-- 相关工作（自监督学习、DNA序列表示学习）
-- 方法设计（问题描述、任务设计、模型架构）
-- 实验与结果（实验设置、预训练结果、分类验证、特征可视化）
-- 讨论与结论
-- 参考文献
-
-### 3. Markdown实验报告
-文件位置：`docs/report.md`
-
-## 环境要求
-
-- Python 3.8+
-- PyTorch 1.10+
-- scikit-learn
-- matplotlib
-- seaborn
-- numpy
-- pandas
-- BioPython
-- python-docx（生成Word文档）
-- jupyter（运行Notebook）
-
-## 安装
-
-1. 克隆项目：
-```bash
-git clone <项目地址>
-cd dna-ssl-project
-```
-
-2. 安装依赖：
 ```bash
 pip install -r requirements.txt
-pip install python-docx jupyter  # 额外依赖
+
+# 端到端跑一遍（预训练 + 分类 + 可视化，CPU 上较慢）
+python src/experiment_runner.py
+
+# 已有预训练 checkpoint 时，只重跑下游分类（省掉预训练）
+python scripts/rerun_classification.py
 ```
 
-## 使用方法
+## 结果文件
 
-### 1. 数据准备
+`results/experiment_20260624_151338/` 中：
 
-项目使用NCBI RefSeq数据库的DNA序列数据。数据已预处理并保存在`data/`目录中。
+| 文件 | 内容 |
+|---|---|
+| `experiment_results.json` | 全部指标、每轮 loss 与验证准确率、配置快照 |
+| `pretraining/final_model.pt` | 预训练权重（供 `scripts/rerun_classification.py` 复用） |
+| `visualizations/dna_features_pca.png` | 表征的 PCA 投影 |
+| `visualizations/dna_features_tsne.png` | 表征的 t-SNE 投影 |
 
-### 2. 运行实验
+> 预训练记录来自 2026-06-24 的原始运行；分类部分因下述 bug 已修复，
+> 并用同一份预训练权重重跑。
+> `docs/*.docx` 与新增的实验目录已加入 `.gitignore`，可随时重新生成。
 
-运行完整的实验流程：
+## 已知局限
 
-```bash
-cd src
-python experiment_runner.py
-```
+- **表征本身是瓶颈。** t-SNE 上 worm 可以分离，但 human / mouse / fly 严重重叠 ——
+  全部 3051 条特征的轮廓系数只有 **0.011**（越接近 1 越分离）。
+  0.68 的天花板来自表征质量，而不在分类头。
+- **规模很小。** 预训练只有 10 epoch、3051 条序列，与真实生物信息学场景差几个数量级。
+- **只做了线性探测**，没有尝试微调编码器或对比学习目标（如 SimCLR / BYOL 式的序列增强）。
+- 数据是固定 750bp 的片段，没有覆盖长度变化带来的影响。
 
-实验将依次执行：
-- 预训练实验：使用掩码重构学习预训练CNN编码器
-- 分类实验：在预训练表示上训练分类头
-- 特征可视化：生成t-SNE和PCA可视化图
+---
 
-### 3. 查看结果
+## 复盘：分类头为什么停在随机水平
 
-实验结果保存在`results/`目录中：
-- `experiment_results.json`：所有实验指标
-- `pretraining/`：预训练模型
-- `visualizations/`：可视化图表
+### 症状
 
-### 4. 查看可视化展示
+- 分类损失 5 轮只从 `1.3874` 走到 `1.3839`，而 `ln(4) = 1.3863`
+  —— 正好是 4 分类的随机水平，是梯度几乎为零的签名。
+- 准确率 `0.2357`，比「永远猜同一类」还差。
 
-```bash
-cd notebooks
-jupyter notebook visualization.ipynb
-```
+### 定位
 
-### 5. 运行测试
+把冻结的编码器单独拿出来提特征、直接喂给逻辑回归：
 
-运行所有测试：
+| 做法 | 验证集准确率 |
+|---|---|
+| 复刻仓库原始训练循环（lr=1e-4 × 5 epoch） | 0.2500 |
+| 冻结特征 + 逻辑回归 | **0.4389** |
 
-```bash
-python -m pytest tests/ -v
-```
+结论明确：**编码器学到的表征是有效的，坏的是分类头。**
 
-## 模型架构
+### 三个根因（均为实测验证）
 
-### CNN编码器
-- **嵌入层**：将k-mer token转换为128维向量
-- **卷积层**：三层1D卷积（128→256→512）
-- **池化层**：全局平均池化
-- **全连接层**：512→256（表示维度）
+**1. 冻结的编码器被一起拖进了训练模式。**
+`ClassificationModel` 只在 `__init__` 里把参数设成 `requires_grad=False`，
+但 `experiment_runner` 调了 `self.classification_model.train()` ——
+BatchNorm 于是改用分类任务的 batch 统计量，覆盖掉预训练得到的 running stats，
+Dropout 也被打开。实测特征 L2 范数：
 
-### 掩码重构模型
-- **掩码策略**：随机掩码15%的碱基
-- **重构头**：将编码器输出映射到词汇表大小
-- **损失函数**：交叉熵损失（只计算被掩码位置）
+| 编码器状态 | 特征 L2 范数中位数 |
+|---|---|
+| `eval()` | 0.455 |
+| `train()` | 3.039 |
 
-### 分类模型
-- **预训练编码器**：冻结参数
-- **分类头**：256→128→4（物种数量）
+训练与推理的特征分布相差 6.7 倍。
 
-## 实验结果
+**2. 特征量级过小，而学习率沿用了预训练的值。**
+编码器末层是 ReLU，输出被压在 L2 ≈ 0.46 的微小量级；
+分类头却沿用预训练的 `1e-4`，梯度小到几乎不更新
+（实测 5 轮后 loss 反而从 `1.3875` 升到 `1.3880`）。
 
-### 预训练结果
-- **训练损失**：从4.06下降到0.61（下降85%）
-- **验证损失**：从3.81下降到0.53（下降86%）
-- **训练轮次**：10个epoch
+**3. 训练轮数被硬编码成 5，且全程不看验证集。**
+配置文件里写的是 `finetune.epochs: 50`，代码里却写死 `5`；
+日志里没有任何验证指标 —— 所以「模型完全没在学」这件事一直没被察觉。
 
-### 分类结果
-- **准确率**：23.57%
-- **精确率**：5.89%
-- **召回率**：25%
-- **F1分数**：9.54%
+### 修复
 
-### 特征可视化
-- **t-SNE可视化**：四个物种的特征有一定区分
-- **PCA分析**：前两个主成分解释16.7%的方差
-- **轮廓系数**：0.0148
+| 根因 | 修复 |
+|---|---|
+| 编码器进训练模式 | 覆写 `ClassificationModel.train()`，无论外层怎么切，编码器始终锁在 `eval()` |
+| 特征量级小 / 学习率不匹配 | 加 `BatchNorm1d` 做特征标准化；分类头独立使用 `1e-3` |
+| 轮数硬编码 / 无验证监控 | 轮数与学习率提为构造参数（默认 50 / `1e-3`）；每轮记录 val loss 与 val accuracy，并回滚到验证集最优权重 |
 
-## 技术栈
+**顺带修的性能问题**：编码器冻结后每轮重跑 CNN 纯属浪费 —— CPU 上约 50ms/样本，
+50 轮要近 100 分钟。改为在训练前一次性预提取并缓存特征。
 
-- **编程语言**：Python 3.11
-- **深度学习框架**：PyTorch
-- **机器学习库**：scikit-learn
-- **可视化库**：matplotlib, seaborn
-- **数据处理**：numpy, pandas, BioPython
-- **文档生成**：python-docx
-- **交互式环境**：Jupyter Notebook
+**顺带修的兼容性问题**：`TSNE(n_iter=...)` 在 scikit-learn ≥ 1.5 中已更名为
+`max_iter`，且 `learning_rate` 不再接受浮点数。`feature_visualization.py`
+现按实际函数签名自适应，新旧版本都能跑。
 
-## 项目亮点
+### 修复前后
 
-1. **完整的自监督学习流程**：从数据预处理到模型训练再到结果分析
-2. **TDD开发模式**：每个模块都有完整的测试用例（124个）
-3. **模块化设计**：各组件独立实现，易于扩展和修改
-4. **可视化分析**：提供t-SNE和PCA可视化，直观展示学习到的表示
-5. **多格式交付**：Jupyter Notebook（交互式）、Word文档（学术报告）、Markdown（技术文档）
+| 配置 | train loss | val accuracy |
+|---|---|---|
+| 修复前 | 1.3875 → 1.3880（不降反升） | 0.2357 |
+| 修复后 | 1.1776 → 0.2563 | **0.6825** |
 
-## 未来改进方向
+---
 
-1. **模型架构**：尝试Transformer等更复杂的架构
-2. **训练策略**：增加训练轮次，使用更大的数据集
-3. **掩码策略**：优化掩码比例和掩码方式
-4. **对比学习**：结合对比学习等其他自监督学习方法
-5. **下游任务**：尝试更多下游任务，如基因功能预测
+## 数据
 
-## 参考文献
+`data/` 下四个物种各约 750 条、每条恰好 750 bp 的基因组片段（仅 ACGT）：
 
-1. Devlin, J., et al. (2018). BERT: Pre-training of Deep Bidirectional Transformers for Language Understanding.
-2. Zhang, Z., et al. (2019). DNABERT: pre-trained Bidirectional Encoder Representations from Transformers model for DNA-language in genome.
-3. Lee, J., et al. (2023). HyenaDNA: Long-Range Genomic Sequence Modeling at Single Nucleotide Resolution.
+| 物种 | 序列数 |
+|---|---|
+| human | 755 |
+| mouse | 763 |
+| fly | 753 |
+| worm | 780 |
 
-## 许可证
+合计 3051 条，按 8:2 划分训练 / 验证（2440 / 611）。
 
-本项目仅用于学术研究和课程作业。
+## 许可
 
-## 联系方式
-
-如有问题，请联系项目作者。
+MIT

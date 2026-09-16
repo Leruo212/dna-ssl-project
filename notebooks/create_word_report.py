@@ -1,5 +1,8 @@
 """创建 Word 学术报告文档"""
 import os
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 import json
 from docx import Document
 from docx.shared import Inches, Pt, Cm, RGBColor
@@ -299,7 +302,7 @@ doc.add_heading('4  实验与结果', level=1)
 doc.add_heading('4.1  实验设置', level=2)
 
 # 加载实验结果
-results_path = '/Users/marhozen/Desktop/claude/dna-ssl-project/results/experiment_20260624_151338/experiment_results.json'
+results_path = str(PROJECT_ROOT / "results/experiment_20260624_151338/experiment_results.json")
 with open(results_path, 'r') as f:
     results = json.load(f)
 
@@ -386,7 +389,7 @@ p.paragraph_format.line_spacing = 1.5
 
 # 插入t-SNE图片
 doc.add_paragraph()
-tsne_path = '/Users/marhozen/Desktop/claude/dna-ssl-project/results/experiment_20260624_151338/visualizations/dna_features_tsne.png'
+tsne_path = str(PROJECT_ROOT / "results/experiment_20260624_151338/visualizations/dna_features_tsne.png")
 if os.path.exists(tsne_path):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -401,7 +404,7 @@ run.font.size = Pt(10)
 doc.add_paragraph()
 
 # 插入PCA图片
-pca_path = '/Users/marhozen/Desktop/claude/dna-ssl-project/results/experiment_20260624_151338/visualizations/dna_features_pca.png'
+pca_path = str(PROJECT_ROOT / "results/experiment_20260624_151338/visualizations/dna_features_pca.png")
 if os.path.exists(pca_path):
     p = doc.add_paragraph()
     p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -532,7 +535,7 @@ for ref in references:
     p.paragraph_format.left_indent = Cm(1)
 
 # 保存文档
-output_path = '/Users/marhozen/Desktop/claude/dna-ssl-project/docs/DNA序列表征学习报告.docx'
+output_path = str(PROJECT_ROOT / "docs/DNA序列表征学习报告.docx")
 doc.save(output_path)
 
 print(f"Word文档已保存到: {output_path}")

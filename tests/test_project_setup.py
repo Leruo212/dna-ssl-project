@@ -5,6 +5,9 @@
 import os
 import pytest
 import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
 class TestDirectoryStructure:
@@ -12,36 +15,36 @@ class TestDirectoryStructure:
 
     def test_project_root_exists(self):
         """测试项目根目录存在"""
-        project_root = "/Users/marhozen/Desktop/claude/dna-ssl-project"
+        project_root = str(PROJECT_ROOT)
         assert os.path.exists(project_root), f"项目根目录不存在: {project_root}"
 
     def test_data_directory_exists(self):
         """测试data目录存在"""
-        data_dir = "/Users/marhozen/Desktop/claude/dna-ssl-project/data"
+        data_dir = str(PROJECT_ROOT / "data")
         assert os.path.exists(data_dir), "data目录不存在"
         assert os.path.isdir(data_dir), "data路径不是目录"
 
     def test_src_directory_exists(self):
         """测试src目录存在"""
-        src_dir = "/Users/marhozen/Desktop/claude/dna-ssl-project/src"
+        src_dir = str(PROJECT_ROOT / "src")
         assert os.path.exists(src_dir), "src目录不存在"
         assert os.path.isdir(src_dir), "src路径不是目录"
 
     def test_tests_directory_exists(self):
         """测试tests目录存在"""
-        tests_dir = "/Users/marhozen/Desktop/claude/dna-ssl-project/tests"
+        tests_dir = str(PROJECT_ROOT / "tests")
         assert os.path.exists(tests_dir), "tests目录不存在"
         assert os.path.isdir(tests_dir), "tests路径不是目录"
 
     def test_docs_directory_exists(self):
         """测试docs目录存在"""
-        docs_dir = "/Users/marhozen/Desktop/claude/dna-ssl-project/docs"
+        docs_dir = str(PROJECT_ROOT / "docs")
         assert os.path.exists(docs_dir), "docs目录不存在"
         assert os.path.isdir(docs_dir), "docs路径不是目录"
 
     def test_requirements_file_exists(self):
         """测试requirements.txt文件存在"""
-        req_file = "/Users/marhozen/Desktop/claude/dna-ssl-project/requirements.txt"
+        req_file = str(PROJECT_ROOT / "requirements.txt")
         assert os.path.exists(req_file), "requirements.txt文件不存在"
         assert os.path.isfile(req_file), "requirements.txt路径不是文件"
 
@@ -85,13 +88,13 @@ class TestConfigurationFiles:
 
     def test_config_directory_exists(self):
         """测试配置目录存在"""
-        config_dir = "/Users/marhozen/Desktop/claude/dna-ssl-project/config"
+        config_dir = str(PROJECT_ROOT / "config")
         assert os.path.exists(config_dir), "config目录不存在"
         assert os.path.isdir(config_dir), "config路径不是目录"
 
     def test_main_config_exists(self):
         """测试主配置文件存在"""
-        config_file = "/Users/marhozen/Desktop/claude/dna-ssl-project/config/default.yaml"
+        config_file = str(PROJECT_ROOT / "config/default.yaml")
         assert os.path.exists(config_file), "default.yaml配置文件不存在"
         assert os.path.isfile(config_file), "default.yaml路径不是文件"
 

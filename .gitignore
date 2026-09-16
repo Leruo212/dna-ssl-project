@@ -44,5 +44,13 @@ Thumbs.db
 # Project specific
 *.log
 
-# Results (large files, regenerate by running experiment)
-# results/experiment_*/
+# 实验结果（含 checkpoint 权重，体积大，可通过运行实验重新生成）
+# 已提交的那一份作为可复现基准保留；此后新产生的实验目录默认不纳入版本库
+results/experiment_*/
+results/test_*/
+
+# 生成的报告文档
+docs/*.docx
+
+# macOS
+.DS_Store

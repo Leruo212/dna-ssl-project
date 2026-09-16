@@ -82,8 +82,18 @@ class ClassificationModel(nn.Module):
         for param in self.encoder.parameters():
             param.requires_grad = False
 
+        # 编码器必须长期锁定在 eval 模式。
+        # 若跟随外层 train() 切到训练模式，BatchNorm 会用分类任务的 batch 统计量
+        # 覆盖预训练得到的 running stats，Dropout 也会被打开 —— 实测特征 L2 范数
+        # 会从 0.455 膨胀到 3.039，训练/推理特征分布不一致，分类头无法收敛。
+        self.encoder.eval()
+
         # 获取编码器输出维度
         encoder_output_dim = encoder.get_output_dim()
+
+        # 特征标准化：编码器输出被末层 ReLU 压到很小量级（L2 ≈ 0.46），
+        # 直接用原始量级接分类头会导致梯度极小。这里显式归一化。
+        self.feature_norm = nn.BatchNorm1d(encoder_output_dim)
 
         # 分类头：encoder_output_dim -> num_classes
         self.classifier = nn.Sequential(
@@ -94,6 +104,30 @@ class ClassificationModel(nn.Module):
         )
 
         logger.info(f"ClassificationModel初始化完成，编码器输出维度: {encoder_output_dim}，类别数: {num_classes}")
+
+    def train(self, mode: bool = True) -> "ClassificationModel":
+        """覆写 train()，保证编码器始终处于 eval 模式
+
+        无论外层如何调用 model.train() / model.eval()，冻结的编码器都不得
+        切换到训练模式，否则其 BatchNorm running stats 会被分类数据改写。
+        """
+        super().train(mode)
+        self.encoder.eval()
+        return self
+
+    def forward_from_features(self, features: torch.Tensor) -> torch.Tensor:
+        """从已提取的编码器特征直接前向
+
+        编码器是冻结的，其特征与分类头参数无关。因此可以先把整个数据集的
+        特征算一次缓存下来，再在特征上反复迭代，避免每轮重跑 CNN。
+
+        Args:
+            features: 形状为 (batch_size, encoder_output_dim) 的特征张量
+
+        Returns:
+            形状为 (batch_size, num_classes) 的 logits
+        """
+        return self.classifier(self.feature_norm(features))
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """前向传播
@@ -110,10 +144,8 @@ class ClassificationModel(nn.Module):
         with torch.no_grad():
             features = self.encoder(x)
 
-        # 分类头
-        logits = self.classifier(features)
-
-        return logits
+        # 特征标准化后送入分类头
+        return self.forward_from_features(features)
 
     def get_encoder(self) -> nn.Module:
         """获取编码器
