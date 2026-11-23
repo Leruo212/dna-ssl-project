@@ -1,5 +1,7 @@
 # DNA 序列分类的自监督表示学习
 
+<p align="right"><a href="README.en.md"><img src="https://img.shields.io/badge/English-SWITCH-1F4E79?style=flat-square" alt="Read in English"></a></p>
+
 用**掩码重构**（masked reconstruction）在未标注的基因组片段上预训练 CNN 编码器，
 再把学到的表征迁移到四物种分类任务（human / mouse / fly / worm）。
 
