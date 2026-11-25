@@ -1,100 +1,143 @@
-<h1 align="center">Self-Supervised Representation Learning for DNA Sequence Classification</h1>
+# Self-Supervised Learning for DNA Sequence Classification
 
-<p align="center">
-  <a href="README.md"><img src="https://img.shields.io/badge/%E4%B8%AD%E6%96%87-SWITCH-4E9A06?style=flat-square" alt="Switch to Chinese"></a>
-  &nbsp;
-  <img src="https://img.shields.io/badge/English-CURRENT-1F4E79?style=flat-square" alt="English">
-</p>
+Pretrain a convolutional neural network (CNN) encoder with masked reconstruction, freeze it, then train a multilayer perceptron (MLP) head to classify human, mouse, fly and worm sequences.
 
-<p align="center">
-  Masked-reconstruction pretraining of a CNN encoder on unlabelled genomic fragments, then linear probing on a four-species classification task.
-</p>
+[中文](README.md)
 
-## Why this exists
-
-Supervised learning on genomic sequences is bottlenecked by labels, not by data. This project tests the other order: pretrain an encoder on the sequences themselves, freeze it, and ask how much of the task a single linear layer can recover. If the answer is close to the supervised baseline, the representation carries the signal and labels are only needed at the end.
-
-The repository includes the training logs, the projection plots, and a written post-mortem of the period when the classification head produced nothing but chance-level output.
+This is a small representation-learning experiment with training logs, feature plots and debugging notes from an earlier chance-level classifier. Results come from a single run; repeated experiments across random seeds have not been performed.
 
 ## Results
 
 | Stage | Metric | Value |
 |---|---|---|
-| Pretraining, 10 epochs | train loss | 4.0609 to 0.6103 |
-| | validation loss | 3.8067 to 0.5339 |
-| Downstream, 50 epochs | **validation accuracy** | **0.6825** |
-| | precision / recall / F1 | 0.6822 / 0.6871 / 0.6830 |
-| | chance baseline, 4 classes | 0.2500 |
+| Pretraining, 10 epochs | Training loss | 4.0609 → 0.6103 |
+| | Validation loss | 3.8067 → 0.5339 |
+| Classification, 50 epochs | **Validation accuracy** | **0.6825** |
+| | Precision / recall / F1 | 0.6822 / 0.6871 / 0.6830 |
+| | Four-class chance baseline | 0.2500 |
 
-The pretraining loss falls cleanly, which is the trap in this setup: a masked-reconstruction objective can converge while producing a representation that is useless downstream. That gap is what the post-mortem is about.
+Validation accuracy rises from 0.319 at epoch 1 to 0.597 at epoch 25 and 0.683 at epoch 48. An earlier version reached only 0.2357. The fixes are described below.
+
+![Masked-reconstruction training and validation loss](docs/figures/fig2_pretraining_loss.png)
+![Four-species classification metrics](docs/figures/fig3_classification_metrics.png)
 
 ## Method
 
-1. **Tokenise** genomic fragments into fixed-length windows.
-2. **Pretrain** a CNN encoder with a masked-reconstruction objective: randomly mask a proportion of positions, reconstruct them from context.
-3. **Freeze** the encoder and discard the reconstruction head.
-4. **Probe** with a single linear layer trained on the labelled subset.
-5. **Inspect** the representation with PCA and t-SNE, and compare against the chance baseline.
+**Pretraining:** split DNA into 3-mer tokens, giving a vocabulary of 64. Randomly mask 15% of positions and reconstruct them. A three-layer 1D CNN with BatchNorm and global average pooling produces 256-dimensional features.
 
-Freezing is deliberate. Fine-tuning would conflate the quality of the representation with the capacity of the downstream model; a linear probe on frozen features gives a cleaner read.
+**Downstream classification:** freeze the encoder, normalise its features, and train a two-layer MLP with ReLU. This is frozen-feature classification, not strict linear probing.
 
-## Project structure
-
-```
-pretraining/          encoder and masked-reconstruction training
-classification/       frozen-feature linear probe
-visualizations/       PCA and t-SNE projections
-scripts/              rerun_classification.py, utilities
-experiment_results.json
+```text
+DNA → 3-mer tokens → masking → CNN encoder → reconstruction
+                                  |
+                          freeze and extract features
+                                  ↓
+                         normalisation → MLP → four species
 ```
 
-## Quick start
+## Project Structure
+
+```text
+config/default.yaml               Data, model and training configuration
+data/                             Genomic fragments for four species
+docs/figures/                     Report figures
+docs/report.md                    Experiment report
+notebooks/visualization.ipynb      Interactive plots
+results/                          Logs, checkpoint and visualisations
+scripts/rerun_classification.py   Rerun classification from saved weights
+src/
+  kmer_encoding.py                Tokenisation
+  data_preprocessing.py           Cleaning and sequence preparation
+  dataset.py                      Masked and unmasked datasets
+  cnn_encoder.py                  CNN encoder
+  masked_reconstruction_model.py  Pretraining model
+  pretrainer.py                   Pretraining loop
+  classification_model.py         Frozen encoder and MLP head
+  feature_visualization.py        PCA, t-SNE and clustering metrics
+  experiment_runner.py            Full experiment
+tests/                            Unit tests
+requirements.txt                  Dependencies
+```
+
+## Quick Start
+
+Use a Python environment compatible with the dependencies in `requirements.txt`.
 
 ```bash
 pip install -r requirements.txt
 
-# Full pipeline: pretrain, probe, visualise (slow on CPU)
-python scripts/train.py
+# Full experiment: pretraining, classification and plots; slow on CPU
+python src/experiment_runner.py
 
-# With a pretrained checkpoint, skip pretraining
+# Reuse the included pretrained checkpoint
 python scripts/rerun_classification.py
 
-# Tests
-pytest
+# Unit tests
+pytest tests/
 ```
 
-## Output files
+## Output Files
+
+The recorded run is under `results/experiment_20260624_151338/`:
 
 | File | Contents |
 |---|---|
-| `experiment_results.json` | All metrics, per-epoch losses and validation accuracy, config snapshot |
-| `pretraining/final_model.pt` | Pretrained weights, reusable by `scripts/rerun_classification.py` |
-| `visualizations/dna_features_pca.png` | PCA projection of the learned representation |
-| `visualizations/dna_features_tsne.png` | t-SNE projection |
+| `experiment_results.json` | Metrics, loss and accuracy histories, configuration |
+| `pretraining/final_model.pt` | Pretrained weights used by the rerun script |
+| `visualizations/dna_features_pca.png` | Feature PCA projection |
+| `visualizations/dna_features_tsne.png` | Feature t-SNE projection |
 
-## Post-mortem: why the classification head sat at chance
+Pretraining logs are from the original June 24, 2026 run. Classification was rerun using the same pretrained weights after the fixes below. Generated Word reports and new experiment directories are ignored by Git.
 
-### Symptom
+## Known Limitations
 
-Validation accuracy stayed at 0.25 across epochs, exactly the four-class chance rate, while training loss on the probe continued to decrease. Loss curves looked healthy; the model was learning nothing transferable.
+- Feature separation remains weak: worm is more distinct, while human, mouse and fly overlap. The reported silhouette score over 3,051 feature vectors is 0.011.
+- The experiment uses 3,051 sequences and only 10 pretraining epochs.
+- Only the MLP on frozen features is trained downstream. Encoder fine-tuning and contrastive objectives were not evaluated.
+- Fragments are fixed at 750 base pairs; variable-length behaviour is not evaluated.
 
-### Localisation
+![t-SNE projection of 3,051 sequence representations](docs/figures/fig5_tsne.png)
 
-Three hypotheses were tested in isolation rather than by tuning everything at once:
+## Post-mortem: Why the Classification Head Stayed Near Chance
 
-1. **Representation collapse.** If the encoder mapped all inputs to a near-constant vector, a linear probe could only ever output the prior. Checked by inspecting the variance of frozen features and the PCA projection.
-2. **Masking ratio too aggressive.** If too many positions were masked, reconstruction became unsolvable from context and the encoder learned noise. Checked by sweeping the ratio and watching reconstruction loss against probe accuracy.
-3. **Warmup schedule.** If the learning rate spent its warmup before the encoder had moved meaningfully, the representation would be fixed at initialisation. Checked by removing warmup and by starting the probe from a mid-training checkpoint.
+### Symptoms
 
-The order matters: each hypothesis has a distinct signature, and testing them one at a time is what makes the result attributable. The exact finding and the change that resolved it are recorded in the repository history and the write-up alongside the code.
+The original five-epoch classification loss moved from 1.3874 to 1.3839, close to `ln(4) = 1.3863`. The earlier recorded accuracy was 0.2357.
 
-## Known limitations
+As a diagnostic, logistic regression on frozen encoder features reached 0.4389 validation accuracy, compared with 0.2500 when reproducing the original training loop. That suggested the features contained usable signal and that the head's training setup needed investigation.
 
-- Four species only; the transfer claim does not extend to a larger taxonomy without further work.
-- The probe is linear by design. A stronger downstream head would raise the number and tell you less about the representation.
-- Pretraining was capped at 10 epochs for CPU feasibility. The loss had not plateaued, so the reported accuracy is a floor, not a ceiling.
-- Single seed. The 0.68 figure should be read with the variance of repeated runs in mind, which this repository does not provide.
+### Findings and Fixes
+
+| Finding | Fix |
+|---|---|
+| Calling the outer model's `train()` also changed the frozen encoder's BatchNorm and Dropout behaviour | Override `ClassificationModel.train()` to keep the encoder in `eval()` |
+| Small feature magnitudes and a reused `1e-4` learning rate made head training ineffective | Add `BatchNorm1d` feature normalisation and use `1e-3` for the head |
+| The loop was hard-coded to five epochs and did not monitor validation metrics | Make epochs and learning rate configurable, record validation metrics and restore the best weights |
+
+Measured feature L2 norm medians were 0.455 in evaluation mode and 3.039 in training mode. Freezing parameters alone had not kept the feature distribution fixed.
+
+Frozen features are now extracted and cached once instead of recomputing the CNN every epoch. Visualisation code also inspects the installed `TSNE` signature to select `n_iter` or `max_iter`.
+
+| Run | Training loss | Validation accuracy |
+|---|---|---|
+| Before fixes | 1.3875 → 1.3880 | 0.2357 |
+| After fixes | 1.1776 → 0.2563 | **0.6825** |
+
+![Classification-head training loss after the fixes](docs/figures/fig4_classification_loss.png)
+
+## Data
+
+Fragments contain only A, C, G and T, each 750 base pairs long.
+
+| Species | Sequences |
+|---|---|
+| human | 755 |
+| mouse | 763 |
+| fly | 753 |
+| worm | 780 |
+
+The 3,051 fragments are split 80/20 into 2,440 training and 611 validation examples.
 
 ## Licence
 
-MIT. See [LICENSE](LICENSE).
+[MIT](LICENSE)

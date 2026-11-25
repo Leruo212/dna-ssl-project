@@ -1,12 +1,10 @@
 # DNA 序列分类的自监督表示学习
 
-<p align="right"><a href="README.en.md"><img src="https://img.shields.io/badge/English-SWITCH-1F4E79?style=flat-square" alt="Read in English"></a></p>
+用掩码重构预训练卷积神经网络（CNN / Convolutional Neural Network）编码器，再冻结编码器，训练多层感知机（MLP / Multilayer Perceptron）分类头，区分 human、mouse、fly 和 worm 四个物种。
 
-用**掩码重构**（masked reconstruction）在未标注的基因组片段上预训练 CNN 编码器，
-再把学到的表征迁移到四物种分类任务（human / mouse / fly / worm）。
+[English](README.en.md)
 
-针对生物信息学的典型困境：标注昂贵、标签稀缺。思路是先用大量无标注序列学表征，
-再只用少量标注做下游任务。
+这是一个小规模表征学习实验，保留了训练日志、特征可视化，以及早期分类头停在随机水平时的排查记录。当前结果来自单次训练，尚未进行多随机种子重复实验。
 
 `PyTorch` · `124 个单元测试` · `完整训练日志` · `PCA / t-SNE 可视化`
 
@@ -41,8 +39,8 @@
 随机遮住 15% 的 k-mer token（k=3，词表 4³=64），让模型重建被遮住的位置。
 编码器为 3 层一维卷积 + BatchNorm + 全局平均池化，输出 256 维表征。
 
-**下游：线性探测。**
-冻结整个编码器，只训练一个 2 层 MLP 分类头。
+**下游：冻结特征分类。**
+冻结整个编码器，先做特征标准化，再训练一个带 ReLU 的两层 MLP 分类头；这不是严格意义上的线性探测（linear probing）。
 
 ```
 DNA 序列 ──► 3-mer 分词 ──► 随机掩码 ──► CNN 编码器 ──► 256 维表征
@@ -117,11 +115,11 @@ pytest tests/          # 124 passed
 
 - **表征本身是瓶颈。** t-SNE 上 worm 可以分离，但 human / mouse / fly 严重重叠 ——
   全部 3051 条特征的轮廓系数只有 **0.011**（越接近 1 越分离）。
-  0.68 的天花板来自表征质量，而不在分类头。
+  当前结果尚不能确认继续调整分类头或微调编码器是否能改善这一问题。
 
 ![3051 条序列表征的 t-SNE 投影](docs/figures/fig5_tsne.png)
 - **规模很小。** 预训练只有 10 epoch、3051 条序列，与真实生物信息学场景差几个数量级。
-- **只做了线性探测**，没有尝试微调编码器或对比学习目标（如 SimCLR / BYOL 式的序列增强）。
+- **只训练了冻结特征上的 MLP 分类头**，没有尝试微调编码器或对比学习目标（如 SimCLR / BYOL 式的序列增强）。
 - 数据是固定 750bp 的片段，没有覆盖长度变化带来的影响。
 
 ---
@@ -180,9 +178,8 @@ Dropout 也被打开。实测特征 L2 范数：
 **顺带修的性能问题**：编码器冻结后每轮重跑 CNN 纯属浪费 —— CPU 上约 50ms/样本，
 50 轮要近 100 分钟。改为在训练前一次性预提取并缓存特征。
 
-**顺带修的兼容性问题**：`TSNE(n_iter=...)` 在 scikit-learn ≥ 1.5 中已更名为
-`max_iter`，且 `learning_rate` 不再接受浮点数。`feature_visualization.py`
-现按实际函数签名自适应，新旧版本都能跑。
+**兼容性处理**：`feature_visualization.py` 检查 `TSNE` 的实际函数签名，再选择
+`n_iter` 或 `max_iter` 参数，避免版本差异导致调用失败。
 
 ### 修复前后
 
@@ -212,4 +209,4 @@ Dropout 也被打开。实测特征 L2 范数：
 
 ## 许可
 
-MIT
+[MIT](LICENSE)
